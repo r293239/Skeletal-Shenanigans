@@ -17,10 +17,6 @@
             font-family: 'Arial Black', Arial, sans-serif;
             color: #ff6b47;
             cursor: none;
-            touch-action: none;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
         }
 
         #gameContainer {
@@ -55,24 +51,6 @@
             font-size: 12px;
             color: #666;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        }
-
-        @media (max-width: 768px) {
-            .controls {
-                font-size: 10px;
-                bottom: 10px;
-                left: 10px;
-            }
-            
-            .title {
-                font-size: 36px;
-            }
-            
-            .ui-overlay {
-                font-size: 14px;
-                top: 10px;
-                left: 10px;
-            }
         }
 
         .title {
@@ -155,11 +133,11 @@
         </div>
 
         <div class="controls">
-            TAP to jump/fly • R to restart • ESC to menu
+            CLICK/SPACE to jump/fly • R to restart • ESC to menu
         </div>
 
         <div class="title" id="title">SKELETAL SHENANIGANS</div>
-        <div class="subtitle" id="subtitle">Tap to steal the skeleton's jewel...</div>
+        <div class="subtitle" id="subtitle">Click to steal the skeleton's jewel...</div>
         <div class="level-info" id="levelInfo">
             Medium Demon by YoReid & Airzyy<br>
             Event Level • 10 Stars
@@ -243,36 +221,8 @@
             keys[e.code] = false;
         });
 
-        // Mouse events
         document.addEventListener('mousedown', (e) => {
-            e.preventDefault();
             mouseDown = true;
-            handleInput();
-        });
-
-        document.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            mouseDown = false;
-        });
-
-        // Touch events for mobile/iPad
-        document.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            mouseDown = true;
-            handleInput();
-        });
-
-        document.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            mouseDown = false;
-        });
-
-        // Prevent scrolling on mobile
-        document.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-        }, { passive: false });
-
-        function handleInput() {
             if (gameState === 'menu') {
                 startGame();
             } else if (gameState === 'playing') {
@@ -280,7 +230,11 @@
             } else if (gameState === 'dead') {
                 restart();
             }
-        }
+        });
+
+        document.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
 
         // Generate authentic level content
         function generateLevel() {
@@ -557,7 +511,7 @@
         function updatePlayer() {
             const section = getCurrentSection();
             
-            // Ship physics - continuous thrust control
+            // Update player mode and physics based on section
             if (section.mode === 'ship') {
                 // Ship physics - continuous thrust control
                 if (mouseDown || keys['Space']) {
@@ -926,33 +880,3 @@
                 // Mystical atmosphere
                 ctx.fillStyle = `rgba(255, 100, 50, ${0.1 + Math.sin(time * 2) * 0.05})`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                function animate() {
-    requestAnimationFrame(animate);
-    
-    // Clear and draw background
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    particleCtx.clearRect(0, 0, canvas.width, canvas.height);
-    drawBackground();
-
-    if (gameState === 'playing') {
-        scrollOffset += gameSpeed;
-        currentProgress = Math.min(100, Math.floor((scrollOffset / levelLength) * 100));
-        document.getElementById('progress').textContent = currentProgress + '%';
-        document.getElementById('section').textContent = currentSection;
-        if (currentProgress > bestProgress) {
-            bestProgress = currentProgress;
-            document.getElementById('best').textContent = bestProgress + '%';
-        }
-
-        updatePlayer();
-    }
-
-    // TODO: Draw player, obstacles, particles, etc.
-    updateParticles();
-    drawParticles(); // ← You'll need to define this if not already
-}
-
-// Kick off the game loop
-animate();
-<script>
-
