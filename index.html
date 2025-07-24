@@ -242,6 +242,8 @@
             decorations = [];
             backgroundElements = [];
 
+            console.log('Generating level...'); // Debug log
+
             // Forest Chase section (0-2000)
             generateForestChase(0, 2000);
             
@@ -253,6 +255,8 @@
             
             // Boss Fight section (6500-8000)
             generateBossFight(6500, 8000);
+
+            console.log(`Generated ${obstacles.length} obstacles`); // Debug log
         }
 
         function generateForestChase(start, end) {
@@ -276,8 +280,29 @@
                 eyes: { glow: 0 }
             };
 
+            // Add some immediate obstacles near the start
+            obstacles.push({
+                x: 400,
+                y: canvas.height - 50,
+                width: 35,
+                height: 50,
+                type: 'tree_spike',
+                deadly: true,
+                section: 'forest'
+            });
+
+            obstacles.push({
+                x: 600,
+                y: canvas.height - 50,
+                width: 35,
+                height: 50,
+                type: 'tree_spike',
+                deadly: true,
+                section: 'forest'
+            });
+
             // Basic obstacles with forest theme
-            for (let i = start + 200; i < end; i += 120) {
+            for (let i = start + 800; i < end; i += 120) {
                 if (Math.random() < 0.7) {
                     obstacles.push({
                         x: i + Math.random() * 80,
@@ -306,7 +331,7 @@
 
             // Add the stolen jewel at the beginning
             jewel = {
-                x: start + 300,
+                x: 300,
                 y: canvas.height - 120,
                 collected: false,
                 glow: 0,
@@ -536,7 +561,7 @@
 
             // Check jewel collection
             if (!jewel.collected && scrollOffset < 500) {
-                const dist = Math.sqrt(Math.pow(player.x - jewel.x + scrollOffset, 2) + Math.pow(player.y - jewel.y, 2));
+                const dist = Math.sqrt(Math.pow(player.x - (jewel.x - scrollOffset), 2) + Math.pow(player.y - jewel.y, 2));
                 if (dist < 40) {
                     jewel.collected = true;
                     createCollectEffect();
@@ -547,16 +572,15 @@
             checkCollisions();
             
             // Update boss if active
-            if (boss.active) {
+            if (scrollOffset >= 6500) {
+                boss.active = true;
                 updateBoss();
             }
         }
 
         function updateBoss() {
-            const section = getCurrentSection();
-            if (section.name !== 'Boss Fight') return;
+            if (!boss.active) return;
 
-            boss.active = true;
             boss.attackTimer++;
 
             // Boss crystal rotation
@@ -633,6 +657,12 @@
             document.body.classList.add('death-effect');
             setTimeout(() => {
                 document.body.classList.remove('death-effect');
+                // Auto-restart after death effect
+                setTimeout(() => {
+                    if (gameState === 'dead') {
+                        restart();
+                    }
+                }, 1000);
             }, 400);
         }
 
@@ -650,6 +680,7 @@
             jewel.collected = false;
             boss.active = false;
             boss.fireballs = [];
+            boss.attackTimer = 0;
             document.getElementById('attempts').textContent = attempts;
             hideMenuElements();
         }
@@ -658,6 +689,22 @@
             gameState = 'playing';
             generateLevel();
             hideMenuElements();
+            
+            // Reset everything
+            player.x = 150;
+            player.y = canvas.height - 100; // Start on ground
+            player.velocityY = 0;
+            player.onGround = true;
+            player.rotation = 0;
+            player.trail = [];
+            scrollOffset = 0;
+            currentProgress = 0;
+            jewel.collected = false;
+            boss.active = false;
+            boss.fireballs = [];
+            boss.attackTimer = 0;
+            
+            console.log('Game started!'); // Debug log
         }
 
         function goToMenu() {
@@ -762,7 +809,11 @@
             // Section-specific backgrounds
             if (section.theme === 'forest') {
                 // Forest background
-                ctx.fillStyle = `linear-gradient(180deg, #1a2a1a 0%, #0f1f0f 50%, #051005 100%)`;
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#1a2a1a');
+                gradient.addColorStop(0.5, '#0f1f0f');
+                gradient.addColorStop(1, '#051005');
+                ctx.fillStyle = gradient;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 // Draw trees in background
@@ -829,414 +880,3 @@
                 // Mystical atmosphere
                 ctx.fillStyle = `rgba(255, 100, 50, ${0.1 + Math.sin(time * 2) * 0.05})`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-            }
-
-            // Draw ground
-            ctx.fillStyle = section.theme === 'cave' ? '#2a1010' : '#1a0a0a';
-            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
-        }
-
-        function drawGiantSkeleton(x, y) {
-            const time = Date.now() * 0.001;
-            
-            // Giant skeleton head
-            ctx.fillStyle = '#dddddd';
-            ctx.fillRect(x, y, 120, 100);
-            
-            // Eyes with glow
-            const eyeGlow = Math.sin(time * 3) * 0.3 + 0.7;
-            ctx.fillStyle = `rgba(255, 0, 0, ${eyeGlow})`;
-            ctx.fillRect(x + 20, y + 20, 15, 15);
-            ctx.fillRect(x + 85, y + 20, 15, 15);
-            
-            // Eye glow effect
-            ctx.shadowColor = '#ff0000';
-            ctx.shadowBlur = 20;
-            ctx.fillRect(x + 20, y + 20, 15, 15);
-            ctx.fillRect(x + 85, y + 20, 15, 15);
-            ctx.shadowBlur = 0;
-            
-            // Mouth
-            ctx.fillStyle = '#000';
-            ctx.fillRect(x + 30, y + 70, 60, 8);
-            ctx.fillRect(x + 40, y + 60, 8, 20);
-            ctx.fillRect(x + 55, y + 65, 8, 15);
-            ctx.fillRect(x + 70, y + 60, 8, 20);
-            
-            // Jaw bones
-            ctx.fillStyle = '#aaaaaa';
-            ctx.fillRect(x + 10, y + 90, 100, 20);
-        }
-
-        function drawPlayer() {
-            const section = getCurrentSection();
-            
-            // Draw player trail
-            for (let i = 0; i < player.trail.length; i++) {
-                const alpha = (player.trail.length - i) / player.trail.length * 0.3;
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = player.color;
-                ctx.fillRect(player.trail[i].x - 2, player.trail[i].y - 2, 4, 4);
-            }
-            ctx.globalAlpha = 1;
-
-            ctx.save();
-            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
-            ctx.rotate(player.rotation);
-
-            if (section.mode === 'cube') {
-                // Skeletal cube
-                ctx.fillStyle = player.color;
-                ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
-                
-                // Skull face
-                ctx.fillStyle = '#000';
-                ctx.fillRect(-8, -12, 4, 4); // left eye
-                ctx.fillRect(4, -12, 4, 4);  // right eye
-                ctx.fillRect(-6, -4, 12, 2); // mouth
-                ctx.fillRect(-2, -2, 4, 4);  // nose
-                
-                // Bone pattern
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(-10, 0);
-                ctx.lineTo(10, 0);
-                ctx.moveTo(0, -10);
-                ctx.lineTo(0, 10);
-                ctx.stroke();
-            } else if (section.mode === 'ship') {
-                // Skeletal ship
-                ctx.fillStyle = player.color;
-                ctx.beginPath();
-                ctx.moveTo(15, 0);
-                ctx.lineTo(-15, -8);
-                ctx.lineTo(-10, 0);
-                ctx.lineTo(-15, 8);
-                ctx.closePath();
-                ctx.fill();
-                
-                // Ship details
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(-8, -3, 8, 6);
-                ctx.fillStyle = '#000';
-                ctx.fillRect(-6, -2, 2, 2);
-                ctx.fillRect(-3, -2, 2, 2);
-            } else if (section.mode === 'spider') {
-                // Skeletal spider
-                ctx.fillStyle = player.color;
-                ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
-                
-                // Spider legs
-                for (let i = 0; i < 4; i++) {
-                    const angle = (i * Math.PI / 2) + player.rotation;
-                    const legX = Math.cos(angle) * 15;
-                    const legY = Math.sin(angle) * 15;
-                    ctx.strokeStyle = player.color;
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo(legX, legY);
-                    ctx.stroke();
-                }
-                
-                // Spider body details
-                ctx.fillStyle = '#000';
-                ctx.fillRect(-4, -6, 2, 2);
-                ctx.fillRect(2, -6, 2, 2);
-            }
-
-            ctx.restore();
-        }
-
-        function drawObstacles() {
-            const section = getCurrentSection();
-            
-            for (let obstacle of obstacles) {
-                const x = obstacle.x - scrollOffset;
-                
-                if (x < -obstacle.width || x > canvas.width + 50) continue;
-
-                ctx.fillStyle = obstacle.deadly ? '#cc3333' : '#666';
-
-                if (obstacle.type === 'tree_spike') {
-                    // Forest spike (tree branch)
-                    ctx.fillStyle = '#2a1a0a';
-                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-                    
-                    // Branch details
-                    ctx.fillStyle = '#4a3a1a';
-                    for (let i = 0; i < 3; i++) {
-                        ctx.fillRect(x + i * 12, obstacle.y + i * 15, 8, 4);
-                    }
-                } else if (obstacle.type === 'cave_spike_up') {
-                    // Cave stalagmite
-                    ctx.fillStyle = '#3a2020';
-                    ctx.beginPath();
-                    ctx.moveTo(x, obstacle.y + obstacle.height);
-                    ctx.lineTo(x + obstacle.width / 2, obstacle.y);
-                    ctx.lineTo(x + obstacle.width, obstacle.y + obstacle.height);
-                    ctx.closePath();
-                    ctx.fill();
-                    
-                    // Dripping effect
-                    ctx.fillStyle = '#2a1515';
-                    ctx.fillRect(x + obstacle.width / 2 - 2, obstacle.y, 4, 8);
-                } else if (obstacle.type === 'cave_spike_down') {
-                    // Cave stalactite
-                    ctx.fillStyle = '#3a2020';
-                    ctx.beginPath();
-                    ctx.moveTo(x, obstacle.y);
-                    ctx.lineTo(x + obstacle.width / 2, obstacle.y + obstacle.height);
-                    ctx.lineTo(x + obstacle.width, obstacle.y);
-                    ctx.closePath();
-                    ctx.fill();
-                } else if (obstacle.type === 'castle_spike') {
-                    // Castle spike
-                    ctx.fillStyle = '#4a3a3a';
-                    ctx.beginPath();
-                    ctx.moveTo(x, obstacle.y + obstacle.height);
-                    ctx.lineTo(x + obstacle.width / 2, obstacle.y);
-                    ctx.lineTo(x + obstacle.width, obstacle.y + obstacle.height);
-                    ctx.closePath();
-                    ctx.fill();
-                    
-                    // Castle detailing
-                    ctx.fillStyle = '#6a5a5a';
-                    ctx.fillRect(x + 5, obstacle.y + obstacle.height - 10, obstacle.width - 10, 10);
-                } else if (obstacle.type === 'branch_platform' || obstacle.type === 'castle_platform') {
-                    // Platform
-                    ctx.fillStyle = obstacle.type === 'branch_platform' ? '#3a2a1a' : '#5a4a4a';
-                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-                    
-                    // Platform details
-                    ctx.fillStyle = obstacle.type === 'branch_platform' ? '#4a3a2a' : '#6a5a5a';
-                    ctx.fillRect(x, obstacle.y, obstacle.width, 3);
-                } else {
-                    // Default obstacle
-                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-                }
-
-                // Add glow effect for deadly obstacles
-                if (obstacle.deadly) {
-                    ctx.shadowColor = '#ff3333';
-                    ctx.shadowBlur = 8;
-                    ctx.globalAlpha = 0.3;
-                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-                    ctx.shadowBlur = 0;
-                    ctx.globalAlpha = 1;
-                }
-            }
-        }
-
-        function drawJewel() {
-            if (jewel.collected || scrollOffset > 1000) return;
-            
-            const time = Date.now() * 0.001;
-            const x = jewel.x - scrollOffset;
-            const y = jewel.y + Math.sin(time * 2) * 5; // Floating animation
-            
-            jewel.glow = Math.sin(time * 4) * 0.3 + 0.7;
-            
-            // Jewel glow
-            ctx.shadowColor = '#ffdd00';
-            ctx.shadowBlur = 20;
-            ctx.globalAlpha = jewel.glow;
-            
-            // Diamond shape
-            ctx.fillStyle = '#ffdd00';
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(time);
-            ctx.beginPath();
-            ctx.moveTo(0, -15);
-            ctx.lineTo(10, 0);
-            ctx.lineTo(0, 15);
-            ctx.lineTo(-10, 0);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-            
-            ctx.shadowBlur = 0;
-            ctx.globalAlpha = 1;
-        }
-
-        function drawBoss() {
-            if (!boss.active) return;
-            
-            const time = Date.now() * 0.001;
-            const bossX = boss.x - scrollOffset;
-            
-            if (bossX < -200 || bossX > canvas.width + 200) return;
-            
-            // Giant skeleton boss head
-            ctx.fillStyle = '#dddddd';
-            ctx.fillRect(bossX, boss.y, 150, 120);
-            
-            // Boss eyes with intense glow
-            const eyeGlow = Math.sin(time * 5) * 0.4 + 0.6;
-            ctx.shadowColor = '#ff0000';
-            ctx.shadowBlur = 30;
-            ctx.fillStyle = `rgba(255, 0, 0, ${eyeGlow})`;
-            ctx.fillRect(bossX + 25, boss.y + 25, 20, 20);
-            ctx.fillRect(bossX + 105, boss.y + 25, 20, 20);
-            ctx.shadowBlur = 0;
-            
-            // Boss mouth
-            ctx.fillStyle = '#000';
-            ctx.fillRect(bossX + 40, boss.y + 80, 70, 12);
-            
-            // Boss teeth
-            ctx.fillStyle = '#ffffff';
-            for (let i = 0; i < 6; i++) {
-                ctx.fillRect(bossX + 45 + i * 10, boss.y + 75, 6, 15);
-            }
-            
-            // Orange crystal
-            const crystalX = boss.crystal.x - scrollOffset;
-            const crystalY = boss.crystal.y + Math.sin(time * 3) * 3;
-            
-            ctx.save();
-            ctx.translate(crystalX, crystalY);
-            ctx.rotate(boss.crystal.rotation);
-            
-            // Crystal glow
-            const crystalGlow = boss.crystal.glow;
-            ctx.shadowColor = '#ff6600';
-            ctx.shadowBlur = 25;
-            ctx.globalAlpha = crystalGlow;
-            
-            // Diamond crystal
-            ctx.fillStyle = '#ff6600';
-            ctx.beginPath();
-            ctx.moveTo(0, -20);
-            ctx.lineTo(15, 0);
-            ctx.lineTo(0, 20);
-            ctx.lineTo(-15, 0);
-            ctx.closePath();
-            ctx.fill();
-            
-            ctx.restore();
-            ctx.shadowBlur = 0;
-            ctx.globalAlpha = 1;
-            
-            // Draw fireballs
-            for (let fireball of boss.fireballs) {
-                const fbX = fireball.x - scrollOffset;
-                ctx.shadowColor = '#ff4400';
-                ctx.shadowBlur = 15;
-                ctx.fillStyle = '#ff4400';
-                ctx.beginPath();
-                ctx.arc(fbX, fireball.y, 12, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-            }
-            
-            // Boss health bar
-            if (boss.health < boss.maxHealth) {
-                const barWidth = 200;
-                const barHeight = 10;
-                const barX = canvas.width / 2 - barWidth / 2;
-                const barY = 30;
-                
-                ctx.fillStyle = '#333';
-                ctx.fillRect(barX, barY, barWidth, barHeight);
-                ctx.fillStyle = '#ff0000';
-                ctx.fillRect(barX, barY, (boss.health / boss.maxHealth) * barWidth, barHeight);
-                ctx.strokeStyle = '#fff';
-                ctx.strokeRect(barX, barY, barWidth, barHeight);
-            }
-        }
-
-        function drawDecorations() {
-            for (let decoration of decorations) {
-                const x = decoration.x - scrollOffset;
-                
-                if (x < -100 || x > canvas.width + 100) continue;
-
-                ctx.save();
-                
-                if (decoration.type === 'castle_column') {
-                    ctx.fillStyle = '#4a3a3a';
-                    ctx.fillRect(x, decoration.y, 40, decoration.height);
-                    
-                    // Column details
-                    ctx.fillStyle = '#6a5a5a';
-                    ctx.fillRect(x, decoration.y, 40, 20); // Capital
-                    ctx.fillRect(x + 5, decoration.y + 20, 30, decoration.height - 40);
-                    ctx.fillRect(x, decoration.y + decoration.height - 20, 40, 20); // Base
-                }
-                
-                ctx.restore();
-            }
-        }
-
-        function drawParticles() {
-            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
-            
-            for (let particle of particles) {
-                const alpha = particle.life / particle.maxLife;
-                particleCtx.globalAlpha = alpha;
-                particleCtx.fillStyle = particle.color;
-                particleCtx.beginPath();
-                particleCtx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-                particleCtx.fill();
-            }
-            
-            particleCtx.globalAlpha = 1;
-        }
-
-        function updateProgress() {
-            currentProgress = Math.min(100, (scrollOffset / levelLength) * 100);
-            document.getElementById('progress').textContent = Math.floor(currentProgress) + '%';
-            document.getElementById('section').textContent = currentSection;
-            
-            if (currentProgress > bestProgress) {
-                bestProgress = currentProgress;
-                document.getElementById('best').textContent = Math.floor(bestProgress) + '%';
-            }
-        }
-
-        function gameLoop() {
-            // Clear canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            if (gameState === 'playing') {
-                // Update game state
-                scrollOffset += gameSpeed;
-                updatePlayer();
-                updateParticles();
-                updateProgress();
-
-                // Check if level is complete
-                if (scrollOffset >= levelLength) {
-                    goToMenu();
-                }
-            }
-
-            // Draw everything
-            drawBackground();
-            drawDecorations();
-            drawObstacles();
-            drawJewel();
-            drawBoss();
-            
-            if (gameState === 'playing' || gameState === 'dead') {
-                drawPlayer();
-            }
-            
-            drawParticles();
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            particleCanvas.width = window.innerWidth;
-            particleCanvas.height = window.innerHeight;
-        });
-
-        // Start the game loop
-        gameLoop();
