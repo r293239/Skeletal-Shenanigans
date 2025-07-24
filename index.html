@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Skeletal Shenanigans - Official Recreation</title>
     <style>
         * {
@@ -21,6 +21,9 @@
             user-select: none;
             -webkit-user-select: none;
             -webkit-touch-callout: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
         }
 
         #gameContainer {
@@ -34,6 +37,9 @@
             display: block;
             background: linear-gradient(180deg, #1a0808 0%, #2d1010 50%, #0f0505 100%);
             image-rendering: pixelated;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
 
         .ui-overlay {
@@ -45,6 +51,7 @@
             text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
             color: #ff8855;
             font-family: 'Courier New', monospace;
+            pointer-events: none;
         }
 
         .controls {
@@ -55,24 +62,7 @@
             font-size: 12px;
             color: #666;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        }
-
-        @media (max-width: 768px) {
-            .controls {
-                font-size: 10px;
-                bottom: 10px;
-                left: 10px;
-            }
-            
-            .title {
-                font-size: 36px;
-            }
-            
-            .ui-overlay {
-                font-size: 14px;
-                top: 10px;
-                left: 10px;
-            }
+            pointer-events: none;
         }
 
         .title {
@@ -140,12 +130,59 @@
             pointer-events: none;
             z-index: 50;
         }
+
+        @media (max-width: 768px) {
+            .controls {
+                font-size: 10px;
+                bottom: 10px;
+                left: 10px;
+            }
+            
+            .title {
+                font-size: 36px;
+            }
+            
+            .ui-overlay {
+                font-size: 14px;
+                top: 10px;
+                left: 10px;
+            }
+        }
+
+        /* Tap zone for better mobile interaction */
+        .tap-zone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 999;
+            background: transparent;
+        }
+
+        /* Debug panel */
+        .debug-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 10px;
+            z-index: 1000;
+            max-width: 250px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
     <div id="gameContainer">
         <canvas id="gameCanvas"></canvas>
         <canvas id="particles"></canvas>
+        
+        <!-- Invisible tap zone for better touch detection -->
+        <div class="tap-zone" id="tapZone"></div>
         
         <div class="ui-overlay">
             <div>Progress: <span id="progress">0%</span></div>
@@ -159,775 +196,23 @@
         </div>
 
         <div class="title" id="title">SKELETAL SHENANIGANS</div>
-        <div class="subtitle" id="subtitle">Tap to steal the skeleton's jewel...</div>
+        <div class="subtitle" id="subtitle">Tap anywhere to steal the skeleton's jewel...</div>
         <div class="level-info" id="levelInfo">
             Medium Demon by YoReid & Airzyy<br>
             Event Level • 10 Stars
         </div>
+
+        <!-- Debug info panel -->
+        <div class="debug-info" id="debugInfo">
+            <div>Status: <span id="debugStatus">Loading...</span></div>
+            <div>Canvas: <span id="debugCanvas">0x0</span></div>
+            <div>Touches: <span id="debugTouches">0</span></div>
+            <div>Game State: <span id="debugGameState">menu</span></div>
+            <div>Device: <span id="debugUA">Unknown</span></div>
+        </div>
     </div>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const particleCanvas = document.getElementById('particles');
-        const particleCtx = particleCanvas.getContext('2d');
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        particleCanvas.width = window.innerWidth;
-        particleCanvas.height = window.innerHeight;
-
-        // Game state
-        let gameState = 'menu'; // menu, playing, dead
-        let gameSpeed = 5;
-        let scrollOffset = 0;
-        let attempts = 1;
-        let bestProgress = 0;
-        let currentProgress = 0;
-        let levelLength = 8000;
-        let currentSection = 'Forest Chase';
-        let sectionProgress = 0;
-
-        // Level sections based on actual level
-        const sections = [
-            { name: 'Forest Chase', start: 0, end: 2000, mode: 'cube', theme: 'forest' },
-            { name: 'Cave Spider', start: 2000, end: 4000, mode: 'spider', theme: 'cave' },
-            { name: 'Castle Interior', start: 4000, end: 6500, mode: 'cube', theme: 'castle' },
-            { name: 'Boss Fight', start: 6500, end: 8000, mode: 'ship', theme: 'tower' }
-        ];
-
-        // Player object
-        const player = {
-            x: 150,
-            y: canvas.height / 2,
-            width: 28,
-            height: 28,
-            velocityY: 0,
-            onGround: false,
-            rotation: 0,
-            mode: 'cube', // cube, ship, ball, ufo, wave, robot, spider
-            gravity: 0.7,
-            jumpPower: -14,
-            color: '#ff6b47',
-            trail: []
-        };
-
-        // Game objects
-        let obstacles = [];
-        let decorations = [];
-        let particles = [];
-        let backgroundElements = [];
-        let jewel = { x: 300, y: canvas.height - 150, collected: false, glow: 0 };
-        let giantSkeleton = { x: 0, y: 0, visible: false, phase: 0 };
-        let boss = { x: 0, y: 0, active: false, health: 100, fireballs: [] };
-
-        // Input handling
-        let keys = {};
-        let mouseDown = false;
-
-        document.addEventListener('keydown', (e) => {
-            keys[e.code] = true;
-            if (e.code === 'Space' && gameState === 'playing') {
-                e.preventDefault();
-                jump();
-            }
-            if (e.code === 'KeyR') {
-                restart();
-            }
-            if (e.code === 'Escape') {
-                goToMenu();
-            }
-        });
-
-        document.addEventListener('keyup', (e) => {
-            keys[e.code] = false;
-        });
-
-        // Mouse events
-        document.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            mouseDown = true;
-            handleInput();
-        });
-
-        document.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            mouseDown = false;
-        });
-
-        // Touch events for mobile/iPad
-        document.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            mouseDown = true;
-            handleInput();
-        });
-
-        document.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            mouseDown = false;
-        });
-
-        // Prevent scrolling on mobile
-        document.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-        }, { passive: false });
-
-        function handleInput() {
-            console.log('Input detected! Current game state:', gameState); // Debug log
-            if (gameState === 'menu') {
-                console.log('Starting game...'); // Debug log
-                startGame();
-            } else if (gameState === 'playing') {
-                jump();
-            } else if (gameState === 'dead') {
-                restart();
-            }
-        }
-
-        // Generate authentic level content
-        function generateLevel() {
-            obstacles = [];
-            decorations = [];
-            backgroundElements = [];
-
-            console.log('Generating level...'); // Debug log
-
-            // Forest Chase section (0-2000)
-            generateForestChase(0, 2000);
-            
-            // Cave Spider section (2000-4000)
-            generateCaveSpider(2000, 4000);
-            
-            // Castle Interior section (4000-6500)
-            generateCastleInterior(4000, 6500);
-            
-            // Boss Fight section (6500-8000)
-            generateBossFight(6500, 8000);
-
-            console.log(`Generated ${obstacles.length} obstacles`); // Debug log
-        }
-
-        function generateForestChase(start, end) {
-            // Forest background elements
-            for (let i = start; i < end; i += 150) {
-                backgroundElements.push({
-                    x: i + Math.random() * 100,
-                    y: canvas.height - 200 - Math.random() * 150,
-                    type: 'tree',
-                    scale: 0.8 + Math.random() * 0.4,
-                    layer: 0.3
-                });
-            }
-
-            // Giant skeleton in background
-            giantSkeleton = {
-                x: start + 500,
-                y: canvas.height - 400,
-                visible: true,
-                phase: 0,
-                eyes: { glow: 0 }
-            };
-
-            // Add some immediate obstacles near the start
-            obstacles.push({
-                x: 400,
-                y: canvas.height - 50,
-                width: 35,
-                height: 50,
-                type: 'tree_spike',
-                deadly: true,
-                section: 'forest'
-            });
-
-            obstacles.push({
-                x: 600,
-                y: canvas.height - 50,
-                width: 35,
-                height: 50,
-                type: 'tree_spike',
-                deadly: true,
-                section: 'forest'
-            });
-
-            // Basic obstacles with forest theme
-            for (let i = start + 800; i < end; i += 120) {
-                if (Math.random() < 0.7) {
-                    obstacles.push({
-                        x: i + Math.random() * 80,
-                        y: canvas.height - 50,
-                        width: 35,
-                        height: 50,
-                        type: 'tree_spike',
-                        deadly: true,
-                        section: 'forest'
-                    });
-                }
-
-                // Floating platforms
-                if (Math.random() < 0.3) {
-                    obstacles.push({
-                        x: i + Math.random() * 60,
-                        y: canvas.height - 180 - Math.random() * 80,
-                        width: 100,
-                        height: 15,
-                        type: 'branch_platform',
-                        deadly: false,
-                        section: 'forest'
-                    });
-                }
-            }
-
-            // Add the stolen jewel at the beginning
-            jewel = {
-                x: 300,
-                y: canvas.height - 120,
-                collected: false,
-                glow: 0,
-                floating: 0
-            };
-        }
-
-        function generateCaveSpider(start, end) {
-            // Cave background
-            for (let i = start; i < end; i += 100) {
-                backgroundElements.push({
-                    x: i,
-                    y: 0,
-                    type: 'cave_wall',
-                    width: canvas.width,
-                    height: canvas.height,
-                    layer: 0.1
-                });
-            }
-
-            // Tight spider obstacles
-            for (let i = start; i < end; i += 80) {
-                // Ceiling and floor spikes
-                if (Math.random() < 0.8) {
-                    obstacles.push({
-                        x: i + Math.random() * 40,
-                        y: canvas.height - 45,
-                        width: 30,
-                        height: 45,
-                        type: 'cave_spike_up',
-                        deadly: true,
-                        section: 'cave'
-                    });
-                }
-
-                if (Math.random() < 0.6) {
-                    obstacles.push({
-                        x: i + Math.random() * 40,
-                        y: 0,
-                        width: 30,
-                        height: 45,
-                        type: 'cave_spike_down',
-                        deadly: true,
-                        section: 'cave'
-                    });
-                }
-
-                // Narrow passages
-                if (Math.random() < 0.4) {
-                    obstacles.push({
-                        x: i + 50,
-                        y: canvas.height - 200,
-                        width: 20,
-                        height: 100,
-                        type: 'cave_wall',
-                        deadly: true,
-                        section: 'cave'
-                    });
-                }
-            }
-        }
-
-        function generateCastleInterior(start, end) {
-            // Castle walls and architecture
-            for (let i = start; i < end; i += 200) {
-                backgroundElements.push({
-                    x: i,
-                    y: 0,
-                    type: 'castle_wall',
-                    width: 200,
-                    height: canvas.height,
-                    layer: 0.2
-                });
-
-                // Castle columns
-                decorations.push({
-                    x: i + 50,
-                    y: canvas.height - 300,
-                    type: 'castle_column',
-                    height: 300
-                });
-            }
-
-            // Castle obstacles
-            for (let i = start; i < end; i += 100) {
-                if (Math.random() < 0.6) {
-                    obstacles.push({
-                        x: i + Math.random() * 60,
-                        y: canvas.height - 60,
-                        width: 40,
-                        height: 60,
-                        type: 'castle_spike',
-                        deadly: true,
-                        section: 'castle'
-                    });
-                }
-
-                // Moving platforms
-                if (Math.random() < 0.4) {
-                    obstacles.push({
-                        x: i + Math.random() * 50,
-                        y: canvas.height - 200 - Math.random() * 100,
-                        width: 80,
-                        height: 15,
-                        type: 'castle_platform',
-                        deadly: false,
-                        section: 'castle',
-                        moving: true,
-                        moveSpeed: 1
-                    });
-                }
-            }
-        }
-
-        function generateBossFight(start, end) {
-            // Tower interior background
-            backgroundElements.push({
-                x: start,
-                y: 0,
-                type: 'tower_interior',
-                width: end - start,
-                height: canvas.height,
-                layer: 0.1
-            });
-
-            // Boss setup
-            boss = {
-                x: start + 600,
-                y: 100,
-                active: false,
-                health: 100,
-                maxHealth: 100,
-                fireballs: [],
-                crystal: {
-                    x: start + 650,
-                    y: 150,
-                    glow: 0,
-                    rotation: 0
-                },
-                phase: 0,
-                attackTimer: 0
-            };
-
-            // No regular obstacles in boss fight - just boss attacks
-        }
-
-        function jump() {
-            const section = getCurrentSection();
-            
-            if (section.mode === 'cube' && player.onGround) {
-                player.velocityY = player.jumpPower;
-                player.onGround = false;
-                createJumpParticles();
-            } else if (section.mode === 'ship' || (section.mode === 'ship' && mouseDown)) {
-                player.velocityY -= 1.5;
-                createThrustParticles();
-            } else if (section.mode === 'spider') {
-                // Spider teleport/flip mechanics
-                if (player.onGround) {
-                    player.velocityY = player.jumpPower * 0.8;
-                    player.onGround = false;
-                }
-            }
-        }
-
-        function getCurrentSection() {
-            for (let section of sections) {
-                if (scrollOffset >= section.start && scrollOffset < section.end) {
-                    currentSection = section.name;
-                    player.mode = section.mode;
-                    return section;
-                }
-            }
-            return sections[0];
-        }
-
-        function updatePlayer() {
-            const section = getCurrentSection();
-            
-            // Ship physics - continuous thrust control
-            if (section.mode === 'ship') {
-                // Ship physics - continuous thrust control
-                if (mouseDown || keys['Space']) {
-                    player.velocityY -= 1.2;
-                } else {
-                    player.velocityY += 0.5; // Gentle fall
-                }
-                player.velocityY *= 0.95; // Air resistance
-            } else {
-                // Cube/Spider physics
-                player.velocityY += player.gravity;
-            }
-
-            // Update position
-            player.y += player.velocityY;
-
-            // Ground collision
-            const groundY = canvas.height - 50;
-            if (player.y + player.height > groundY) {
-                player.y = groundY - player.height;
-                if (section.mode !== 'ship') {
-                    player.velocityY = 0;
-                    player.onGround = true;
-                }
-            } else {
-                player.onGround = false;
-            }
-
-            // Ceiling collision
-            if (player.y < 0) {
-                player.y = 0;
-                if (section.mode !== 'ship') {
-                    player.velocityY = 0;
-                }
-            }
-
-            // Update rotation
-            if (section.mode === 'cube') {
-                player.rotation = (scrollOffset * 0.02) % (Math.PI * 2);
-            } else if (section.mode === 'ship') {
-                player.rotation = player.velocityY * 0.05;
-            }
-
-            // Update player trail
-            player.trail.unshift({ x: player.x + player.width/2, y: player.y + player.height/2 });
-            if (player.trail.length > 8) player.trail.pop();
-
-            // Check jewel collection
-            if (!jewel.collected && scrollOffset < 500) {
-                const dist = Math.sqrt(Math.pow(player.x - (jewel.x - scrollOffset), 2) + Math.pow(player.y - jewel.y, 2));
-                if (dist < 40) {
-                    jewel.collected = true;
-                    createCollectEffect();
-                }
-            }
-
-            // Check collisions
-            checkCollisions();
-            
-            // Update boss if active
-            if (scrollOffset >= 6500) {
-                boss.active = true;
-                updateBoss();
-            }
-        }
-
-        function updateBoss() {
-            if (!boss.active) return;
-
-            boss.attackTimer++;
-
-            // Boss crystal rotation
-            boss.crystal.rotation += 0.05;
-            boss.crystal.glow = Math.sin(Date.now() * 0.01) * 0.5 + 0.5;
-
-            // Fire attack pattern
-            if (boss.attackTimer % 60 === 0) {
-                // Launch fireball
-                boss.fireballs.push({
-                    x: boss.crystal.x,
-                    y: boss.crystal.y,
-                    targetX: player.x,
-                    targetY: player.y,
-                    speed: 3,
-                    life: 180
-                });
-            }
-
-            // Update fireballs
-            for (let i = boss.fireballs.length - 1; i >= 0; i--) {
-                const fb = boss.fireballs[i];
-                const angle = Math.atan2(fb.targetY - fb.y, fb.targetX - fb.x);
-                fb.x += Math.cos(angle) * fb.speed;
-                fb.y += Math.sin(angle) * fb.speed;
-                fb.life--;
-
-                // Check fireball collision with player
-                const dist = Math.sqrt(Math.pow(player.x - fb.x, 2) + Math.pow(player.y - fb.y, 2));
-                if (dist < 30) {
-                    die();
-                    return;
-                }
-
-                if (fb.life <= 0) {
-                    boss.fireballs.splice(i, 1);
-                }
-            }
-        }
-
-        function checkCollisions() {
-            const playerRect = {
-                x: player.x,
-                y: player.y,
-                width: player.width,
-                height: player.height
-            };
-
-            for (let obstacle of obstacles) {
-                const obstacleRect = {
-                    x: obstacle.x - scrollOffset,
-                    y: obstacle.y,
-                    width: obstacle.width,
-                    height: obstacle.height
-                };
-
-                if (collision(playerRect, obstacleRect) && obstacle.deadly) {
-                    die();
-                    return;
-                }
-            }
-        }
-
-        function collision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-
-        function die() {
-            gameState = 'dead';
-            createDeathEffect();
-            document.body.classList.add('death-effect');
-            setTimeout(() => {
-                document.body.classList.remove('death-effect');
-                // Auto-restart after death effect
-                setTimeout(() => {
-                    if (gameState === 'dead') {
-                        restart();
-                    }
-                }, 1000);
-            }, 400);
-        }
-
-        function restart() {
-            gameState = 'playing';
-            player.x = 150;
-            player.y = canvas.height / 2;
-            player.velocityY = 0;
-            player.onGround = false;
-            player.rotation = 0;
-            player.trail = [];
-            scrollOffset = 0;
-            attempts++;
-            currentProgress = 0;
-            jewel.collected = false;
-            boss.active = false;
-            boss.fireballs = [];
-            boss.attackTimer = 0;
-            document.getElementById('attempts').textContent = attempts;
-            hideMenuElements();
-        }
-
-        function startGame() {
-            console.log('startGame() called'); // Debug log
-            gameState = 'playing';
-            generateLevel();
-            hideMenuElements();
-            
-            // Reset everything
-            player.x = 150;
-            player.y = canvas.height - 100; // Start on ground
-            player.velocityY = 0;
-            player.onGround = true;
-            player.rotation = 0;
-            player.trail = [];
-            scrollOffset = 0;
-            currentProgress = 0;
-            jewel.collected = false;
-            boss.active = false;
-            boss.fireballs = [];
-            boss.attackTimer = 0;
-            
-            console.log('Game started! Canvas size:', canvas.width, 'x', canvas.height); // Debug log
-            console.log('Player position:', player.x, player.y); // Debug log
-            console.log('Game state:', gameState); // Debug log
-        }
-
-        function goToMenu() {
-            gameState = 'menu';
-            scrollOffset = 0;
-            currentProgress = 0;
-            currentSection = 'Menu';
-            showMenuElements();
-        }
-
-        function hideMenuElements() {
-            document.getElementById('title').style.display = 'none';
-            document.getElementById('subtitle').style.display = 'none';
-            document.getElementById('levelInfo').style.display = 'none';
-        }
-
-        function showMenuElements() {
-            document.getElementById('title').style.display = 'block';
-            document.getElementById('subtitle').style.display = 'block';
-            document.getElementById('levelInfo').style.display = 'block';
-        }
-
-        function createJumpParticles() {
-            for (let i = 0; i < 6; i++) {
-                particles.push({
-                    x: player.x + player.width / 2,
-                    y: player.y + player.height,
-                    vx: (Math.random() - 0.5) * 5,
-                    vy: Math.random() * 3 + 1,
-                    life: 25,
-                    maxLife: 25,
-                    color: '#ff6b47',
-                    size: 4
-                });
-            }
-        }
-
-        function createThrustParticles() {
-            for (let i = 0; i < 4; i++) {
-                particles.push({
-                    x: player.x - 5,
-                    y: player.y + player.height / 2,
-                    vx: -Math.random() * 4 - 3,
-                    vy: (Math.random() - 0.5) * 3,
-                    life: 20,
-                    maxLife: 20,
-                    color: '#ffaa00',
-                    size: 5
-                });
-            }
-        }
-
-        function createDeathEffect() {
-            for (let i = 0; i < 25; i++) {
-                particles.push({
-                    x: player.x + player.width / 2,
-                    y: player.y + player.height / 2,
-                    vx: (Math.random() - 0.5) * 10,
-                    vy: (Math.random() - 0.5) * 10,
-                    life: 40,
-                    maxLife: 40,
-                    color: '#ff3333',
-                    size: 8
-                });
-            }
-        }
-
-        function createCollectEffect() {
-            for (let i = 0; i < 15; i++) {
-                particles.push({
-                    x: jewel.x - scrollOffset,
-                    y: jewel.y,
-                    vx: (Math.random() - 0.5) * 6,
-                    vy: (Math.random() - 0.5) * 6,
-                    life: 30,
-                    maxLife: 30,
-                    color: '#ffdd00',
-                    size: 6
-                });
-            }
-        }
-
-        function updateParticles() {
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.2;
-                p.life--;
-                p.size *= 0.98;
-
-                if (p.life <= 0 || p.size < 0.5) {
-                    particles.splice(i, 1);
-                }
-            }
-        }
-
-        function drawBackground() {
-            const section = getCurrentSection();
-            const time = Date.now() * 0.001;
-
-            // Section-specific backgrounds
-            if (section.theme === 'forest') {
-                // Forest background
-                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                gradient.addColorStop(0, '#1a2a1a');
-                gradient.addColorStop(0.5, '#0f1f0f');
-                gradient.addColorStop(1, '#051005');
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw trees in background
-                for (let bg of backgroundElements) {
-                    if (bg.type === 'tree') {
-                        const x = bg.x - scrollOffset * bg.layer;
-                        if (x > -100 && x < canvas.width + 100) {
-                            ctx.save();
-                            ctx.scale(bg.scale, bg.scale);
-                            ctx.fillStyle = '#0a0a0a';
-                            ctx.fillRect(x / bg.scale, bg.y / bg.scale, 30, 100);
-                            ctx.beginPath();
-                            ctx.arc(x / bg.scale + 15, bg.y / bg.scale, 40, 0, Math.PI * 2);
-                            ctx.fill();
-                            ctx.restore();
-                        }
-                    }
-                }
-
-                // Giant skeleton in background
-                if (giantSkeleton.visible) {
-                    const skX = giantSkeleton.x - scrollOffset * 0.2;
-                    if (skX > -200 && skX < canvas.width + 200) {
-                        drawGiantSkeleton(skX, giantSkeleton.y);
-                    }
-                }
-            } else if (section.theme === 'cave') {
-                // Cave background
-                ctx.fillStyle = '#0a0505';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Cave walls
-                ctx.fillStyle = '#1a0f0f';
-                ctx.fillRect(0, 0, canvas.width, 60);
-                ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
-                
-                // Stalactites and stalagmites
-                for (let i = 0; i < canvas.width; i += 40) {
-                    ctx.fillStyle = '#2a1515';
-                    const height = 20 + Math.sin((i + scrollOffset) * 0.02) * 15;
-                    ctx.fillRect(i, 0, 20, height);
-                    ctx.fillRect(i, canvas.height - height, 20, height);
-                }
-            } else if (section.theme === 'castle') {
-                // Castle interior
-                ctx.fillStyle = '#1a1010';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Castle wall pattern
-                ctx.fillStyle = '#2a1a1a';
-                for (let i = 0; i < canvas.width; i += 60) {
-                    ctx.fillRect(i, 0, 40, canvas.height);
-                }
-            } else if (section.theme === 'tower') {
-                // Tower interior for boss fight
-                ctx.fillStyle = '#0f0505';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Tower walls
-                ctx.fillStyle = '#1f0a0a';
-                ctx.fillRect(0, 0, 50, canvas.height);
-                ctx.fillRect(canvas.width - 50, 0, 50, canvas.height);
-                
-                // Mystical atmosphere
-                ctx.fillStyle = `rgba(255, 100, 50, ${0.1 + Math.sin(time * 2) * 0.05})`;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+    <!-- Load the game script -->
+    <script src="game.js"></script>
+</body>
+</html>
