@@ -926,3 +926,32 @@
                 // Mystical atmosphere
                 ctx.fillStyle = `rgba(255, 100, 50, ${0.1 + Math.sin(time * 2) * 0.05})`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
+                function animate() {
+    requestAnimationFrame(animate);
+    
+    // Clear and draw background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particleCtx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
+
+    if (gameState === 'playing') {
+        scrollOffset += gameSpeed;
+        currentProgress = Math.min(100, Math.floor((scrollOffset / levelLength) * 100));
+        document.getElementById('progress').textContent = currentProgress + '%';
+        document.getElementById('section').textContent = currentSection;
+        if (currentProgress > bestProgress) {
+            bestProgress = currentProgress;
+            document.getElementById('best').textContent = bestProgress + '%';
+        }
+
+        updatePlayer();
+    }
+
+    // TODO: Draw player, obstacles, particles, etc.
+    updateParticles();
+    drawParticles(); // ← You'll need to define this if not already
+}
+
+// Kick off the game loop
+animate();
+
