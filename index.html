@@ -1,1 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skeletal Shenanigans - Geometry Dash Recreation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
+        body {
+            background: linear-gradient(135deg, #0a0505, #1a0a0a, #2d1414);
+            overflow: hidden;
+            font-family: 'Arial Black', Arial, sans-serif;
+            color: #ff6b47;
+            cursor: none;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(180deg, #0f0208 0%, #1a0a0a 30%, #2d1414 70%, #0a0505 100%);
+            image-rendering: pixelated;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            color: #ff6b47;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 14px;
+            color: #888;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff6b47;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+            z-index: 200;
+            animation: pulse 2s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .subtitle {
+            position: absolute;
+            top: 60%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #cc5533;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 200;
+            pointer-events: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
+
+        .death-effect {
+            animation: shake 0.3s ease-in-out;
+        }
+
+        #particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <canvas id="particles"></canvas>
+        
+        <div class="ui-overlay">
+            <div>Progress: <span id="progress">0%</span></div>
+            <div>Attempts: <span id="attempts">1</span></div>
+            <div>Best: <span id="best">0%</span></div>
+        </div>
+
+        <div class="controls">
+            CLICK/SPACE to jump • R to restart • ESC to menu
+        </div>
+
+        <div class="title" id="title">SKELETAL SHENANIGANS</div>
+        <div class="subtitle" id="subtitle">Click to start your nightmare...</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const particleCanvas = document.getElementById('particles');
+        const particleCtx = particleCanvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        particleCanvas.width = window.innerWidth;
+        particleCanvas.height = window.innerHeight;
+
+        // Game state
+        let gameState = 'menu'; // menu, playing, dead
+        let gameSpeed = 4;
+        let scrollOffset = 0;
+        let attempts = 1;
+        let bestProgress = 0;
+        let currentProgress = 0;
+        let levelLength = 5000;
+
+        // Player object
+        const player = {
+            x: 150,
+            y: canvas.height / 2,
+            width: 30,
+            height: 30,
+            velocityY: 0,
+            onGround: false,
+            rotation: 0,
+            mode: 'cube', // cube, ship, ball, ufo, wave, robot, spider
+            gravity: 0.8,
+            jumpPower: -15,
+            color: '#ff6b47'
+        };
+
+        // Obstacles and decorations
+        let obstacles = [];
+        let decorations = [];
+        let particles = [];
+
+        // Input handling
+        let keys = {};
+        let mouseDown = false;
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && gameState === 'playing') {
+                e.preventDefault();
+                jump();
+            }
+            if (e.code === 'KeyR') {
+                restart();
+            }
+            if (e.code === 'Escape') {
+                goToMenu();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            mouseDown = true;
+            if (gameState === 'menu') {
+                startGame();
+            } else if (gameState === 'playing') {
+                jump();
+            } else if (gameState === 'dead') {
+                restart();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
+
+        // Generate level content inspired by Skeletal Shenanigans
+        function generateLevel() {
+            obstacles = [];
+            decorations = [];
+
+            // Hellish spider segment obstacles
+            for (let i = 0; i < levelLength; i += 100) {
+                // Ground spikes
+                if (Math.random() < 0.6) {
+                    obstacles.push({
+                        x: i + Math.random() * 80,
+                        y: canvas.height - 60,
+                        width: 40,
+                        height: 60,
+                        type: 'spike',
+                        deadly: true
+                    });
+                }
+
+                // Floating platforms
+                if (Math.random() < 0.4 && i > 200) {
+                    obstacles.push({
+                        x: i + Math.random() * 50,
+                        y: canvas.height - 200 - Math.random() * 100,
+                        width: 120,
+                        height: 20,
+                        type: 'platform',
+                        deadly: false
+                    });
+                }
+
+                // Ceiling spikes
+                if (Math.random() < 0.3) {
+                    obstacles.push({
+                        x: i + Math.random() * 80,
+                        y: 0,
+                        width: 40,
+                        height: 60,
+                        type: 'spike_down',
+                        deadly: true
+                    });
+                }
+
+                // Castle walls (later in level)
+                if (i > levelLength * 0.4 && Math.random() < 0.2) {
+                    obstacles.push({
+                        x: i,
+                        y: canvas.height - 150 - Math.random() * 100,
+                        width: 30,
+                        height: 120,
+                        type: 'wall',
+                        deadly: true
+                    });
+                }
+            }
+
+            // Add skeletal decorations
+            for (let i = 0; i < levelLength; i += 150) {
+                decorations.push({
+                    x: i + Math.random() * 100,
+                    y: canvas.height - 40 - Math.random() * 60,
+                    type: 'skull',
+                    scale: 0.5 + Math.random() * 0.5
+                });
+
+                if (Math.random() < 0.3) {
+                    decorations.push({
+                        x: i + Math.random() * 100,
+                        y: 50 + Math.random() * 100,
+                        type: 'bone',
+                        rotation: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+
+            // Add eerie background elements
+            for (let i = 0; i < levelLength; i += 200) {
+                decorations.push({
+                    x: i + Math.random() * 150,
+                    y: Math.random() * canvas.height,
+                    type: 'ghost',
+                    opacity: 0.3 + Math.random() * 0.4,
+                    scale: 0.8 + Math.random() * 0.4
+                });
+            }
+        }
+
+        function jump() {
+            if (player.mode === 'cube' && player.onGround) {
+                player.velocityY = player.jumpPower;
+                player.onGround = false;
+                createJumpParticles();
+            } else if (player.mode === 'ship') {
+                player.velocityY -= 1.2;
+                createThrustParticles();
+            }
+        }
+
+        function updatePlayer() {
+            // Apply gravity
+            if (player.mode === 'cube') {
+                player.velocityY += player.gravity;
+            }
+
+            // Update position
+            player.y += player.velocityY;
+
+            // Ground collision
+            const groundY = canvas.height - 50;
+            if (player.y + player.height > groundY) {
+                player.y = groundY - player.height;
+                player.velocityY = 0;
+                player.onGround = true;
+            } else {
+                player.onGround = false;
+            }
+
+            // Ceiling collision
+            if (player.y < 0) {
+                player.y = 0;
+                player.velocityY = 0;
+            }
+
+            // Update rotation for visual effect
+            player.rotation += 0.1;
+
+            // Check collisions with obstacles
+            checkCollisions();
+        }
+
+        function checkCollisions() {
+            const playerRect = {
+                x: player.x,
+                y: player.y,
+                width: player.width,
+                height: player.height
+            };
+
+            for (let obstacle of obstacles) {
+                const obstacleRect = {
+                    x: obstacle.x - scrollOffset,
+                    y: obstacle.y,
+                    width: obstacle.width,
+                    height: obstacle.height
+                };
+
+                if (collision(playerRect, obstacleRect) && obstacle.deadly) {
+                    die();
+                    return;
+                }
+            }
+        }
+
+        function collision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function die() {
+            gameState = 'dead';
+            createDeathEffect();
+            document.body.classList.add('death-effect');
+            setTimeout(() => {
+                document.body.classList.remove('death-effect');
+            }, 300);
+        }
+
+        function restart() {
+            gameState = 'playing';
+            player.x = 150;
+            player.y = canvas.height / 2;
+            player.velocityY = 0;
+            player.onGround = false;
+            player.rotation = 0;
+            scrollOffset = 0;
+            attempts++;
+            currentProgress = 0;
+            document.getElementById('attempts').textContent = attempts;
+            document.getElementById('title').style.display = 'none';
+            document.getElementById('subtitle').style.display = 'none';
+        }
+
+        function startGame() {
+            gameState = 'playing';
+            generateLevel();
+            document.getElementById('title').style.display = 'none';
+            document.getElementById('subtitle').style.display = 'none';
+        }
+
+        function goToMenu() {
+            gameState = 'menu';
+            scrollOffset = 0;
+            currentProgress = 0;
+            document.getElementById('title').style.display = 'block';
+            document.getElementById('subtitle').style.display = 'block';
+        }
+
+        function createJumpParticles() {
+            for (let i = 0; i < 5; i++) {
+                particles.push({
+                    x: player.x + player.width / 2,
+                    y: player.y + player.height,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: Math.random() * 2 + 1,
+                    life: 20,
+                    maxLife: 20,
+                    color: '#ff6b47',
+                    size: 3
+                });
+            }
+        }
+
+        function createThrustParticles() {
+            for (let i = 0; i < 3; i++) {
+                particles.push({
+                    x: player.x,
+                    y: player.y + player.height / 2,
+                    vx: -Math.random() * 3 - 2,
+                    vy: (Math.random() - 0.5) * 2,
+                    life: 15,
+                    maxLife: 15,
+                    color: '#ffaa00',
+                    size: 4
+                });
+            }
+        }
+
+        function createDeathEffect() {
+            for (let i = 0; i < 20; i++) {
+                particles.push({
+                    x: player.x + player.width / 2,
+                    y: player.y + player.height / 2,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    life: 30,
+                    maxLife: 30,
+                    color: '#ff3333',
+                    size: 6
+                });
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // gravity
+                p.life--;
+                p.size *= 0.98;
+
+                if (p.life <= 0 || p.size < 0.5) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            ctx.rotate(player.rotation);
+
+            // Draw skeletal cube
+            ctx.fillStyle = player.color;
+            ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
+
+            // Draw skull face
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-8, -12, 4, 4); // left eye
+            ctx.fillRect(4, -12, 4, 4);  // right eye
+            ctx.fillRect(-6, -4, 12, 2); // mouth
+            ctx.fillRect(-2, -2, 4, 4);  // nose
+
+            // Draw bone pattern
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(10, 0);
+            ctx.moveTo(0, -10);
+            ctx.lineTo(0, 10);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawObstacles() {
+            for (let obstacle of obstacles) {
+                const x = obstacle.x - scrollOffset;
+                
+                if (x < -obstacle.width || x > canvas.width + 50) continue;
+
+                ctx.fillStyle = obstacle.deadly ? '#cc3333' : '#666';
+
+                if (obstacle.type === 'spike') {
+                    // Draw upward spike
+                    ctx.beginPath();
+                    ctx.moveTo(x, obstacle.y + obstacle.height);
+                    ctx.lineTo(x + obstacle.width / 2, obstacle.y);
+                    ctx.lineTo(x + obstacle.width, obstacle.y + obstacle.height);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Add skull decoration
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x + obstacle.width / 2 - 3, obstacle.y + 10, 6, 6);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x + obstacle.width / 2 - 1, obstacle.y + 12, 1, 1);
+                    ctx.fillRect(x + obstacle.width / 2 + 1, obstacle.y + 12, 1, 1);
+                } else if (obstacle.type === 'spike_down') {
+                    // Draw downward spike
+                    ctx.beginPath();
+                    ctx.moveTo(x, obstacle.y);
+                    ctx.lineTo(x + obstacle.width / 2, obstacle.y + obstacle.height);
+                    ctx.lineTo(x + obstacle.width, obstacle.y);
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    // Draw regular rectangle
+                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
+                }
+
+                // Add eerie glow effect
+                if (obstacle.deadly) {
+                    ctx.shadowColor = '#ff3333';
+                    ctx.shadowBlur = 10;
+                    ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+
+        function drawDecorations() {
+            for (let decoration of decorations) {
+                const x = decoration.x - scrollOffset;
+                
+                if (x < -50 || x > canvas.width + 50) continue;
+
+                ctx.save();
+                
+                if (decoration.type === 'skull') {
+                    ctx.scale(decoration.scale, decoration.scale);
+                    ctx.fillStyle = '#dddddd';
+                    ctx.fillRect(x / decoration.scale - 10, decoration.y / decoration.scale - 10, 20, 15);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x / decoration.scale - 7, decoration.y / decoration.scale - 7, 3, 3);
+                    ctx.fillRect(x / decoration.scale + 4, decoration.y / decoration.scale - 7, 3, 3);
+                    ctx.fillRect(x / decoration.scale - 1, decoration.y / decoration.scale - 2, 2, 5);
+                } else if (decoration.type === 'bone') {
+                    ctx.translate(x, decoration.y);
+                    ctx.rotate(decoration.rotation);
+                    ctx.fillStyle = '#eeeeee';
+                    ctx.fillRect(-15, -2, 30, 4);
+                    ctx.fillRect(-15, -4, 6, 8);
+                    ctx.fillRect(9, -4, 6, 8);
+                } else if (decoration.type === 'ghost') {
+                    ctx.globalAlpha = decoration.opacity;
+                    ctx.scale(decoration.scale, decoration.scale);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.ellipse(x / decoration.scale, decoration.y / decoration.scale, 15, 20, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x / decoration.scale - 5, decoration.y / decoration.scale - 5, 3, 3);
+                    ctx.fillRect(x / decoration.scale + 2, decoration.y / decoration.scale - 5, 3, 3);
+                }
+                
+                ctx.restore();
+            }
+        }
+
+        function drawParticles() {
+            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            
+            for (let particle of particles) {
+                const alpha = particle.life / particle.maxLife;
+                particleCtx.globalAlpha = alpha;
+                particleCtx.fillStyle = particle.color;
+                particleCtx.beginPath();
+                particleCtx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                particleCtx.fill();
+            }
+            
+            particleCtx.globalAlpha = 1;
+        }
+
+        function drawBackground() {
+            // Animated hellish background
+            const time = Date.now() * 0.001;
+            
+            // Draw moving clouds/smoke
+            ctx.fillStyle = `rgba(50, 20, 20, ${0.3 + Math.sin(time) * 0.1})`;
+            for (let i = 0; i < 5; i++) {
+                const x = (scrollOffset * 0.2 + i * 200) % (canvas.width + 100) - 50;
+                const y = 50 + Math.sin(time + i) * 20;
+                ctx.beginPath();
+                ctx.ellipse(x, y, 60, 30, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw ground
+            ctx.fillStyle = '#1a0a0a';
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+
+            // Add ground texture
+            ctx.fillStyle = '#cc3333';
+            for (let i = 0; i < canvas.width; i += 20) {
+                if (Math.sin((i + scrollOffset) * 0.1) > 0.5) {
+                    ctx.fillRect(i, canvas.height - 50, 4, 50);
+                }
+            }
+        }
+
+        function updateProgress() {
+            currentProgress = Math.min(100, (scrollOffset / levelLength) * 100);
+            document.getElementById('progress').textContent = Math.floor(currentProgress) + '%';
+            
+            if (currentProgress > bestProgress) {
+                bestProgress = currentProgress;
+                document.getElementById('best').textContent = Math.floor(bestProgress) + '%';
+            }
+        }
+
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'playing') {
+                // Update game state
+                scrollOffset += gameSpeed;
+                updatePlayer();
+                updateParticles();
+                updateProgress();
+
+                // Check if level is complete
+                if (scrollOffset >= levelLength) {
+                    // Level complete!
+                    goToMenu();
+                }
+            }
+
+            // Draw everything
+            drawBackground();
+            drawDecorations();
+            drawObstacles();
+            
+            if (gameState === 'playing' || gameState === 'dead') {
+                drawPlayer();
+            }
+            
+            drawParticles();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            particleCanvas.width = window.innerWidth;
+            particleCanvas.height = window.innerHeight;
+        });
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>
